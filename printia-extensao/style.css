@@ -1,0 +1,66 @@
+/* Botão Flutuante */
+#printia-floating-btn {
+  position: fixed; bottom: 24px; right: 24px; width: 60px; height: 60px;
+  background-color: #4f46e5; color: white; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; box-shadow: 0 10px 25px rgba(79, 70, 229, 0.4);
+  z-index: 999999; font-size: 28px; border: none; transition: transform 0.2s;
+}
+#printia-floating-btn:hover { transform: scale(1.05); }
+
+/* Painel Principal */
+#printia-sidebar-injected {
+  position: fixed; bottom: 100px; right: 24px; width: 450px; height: 75vh; max-height: 800px;
+  background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 20px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2); z-index: 999999;
+  display: flex; flex-direction: column; font-family: -apple-system, sans-serif;
+  transform: translateY(20px) scale(0.95); opacity: 0; pointer-events: none;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); overflow: hidden;
+}
+#printia-sidebar-injected.open { transform: translateY(0) scale(1); opacity: 1; pointer-events: auto; }
+
+/* Header */
+#printia-header { background-color: #312e81; color: white; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; }
+#printia-header h1 { margin: 0; font-size: 15px; font-weight: bold; display: flex; align-items: center; gap: 8px; }
+#printia-close-btn { background: none; border: none; color: white; cursor: pointer; font-size: 16px; opacity: 0.8; }
+
+/* Abas (Tabs) */
+#printia-tabs { display: flex; background: #f1f5f9; padding: 8px; gap: 8px; border-bottom: 1px solid #e2e8f0; }
+.printia-tab { 
+  flex: 1; padding: 10px; border: none; border-radius: 8px; font-size: 11px; font-weight: bold; 
+  text-transform: uppercase; cursor: pointer; color: #64748b; background: transparent; transition: all 0.2s;
+}
+.printia-tab.active { background: white; color: #4f46e5; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+/* Área de Chat */
+#printia-content { padding: 20px; flex: 1; overflow-y: auto; background-color: #f8fafc; display: flex; flex-direction: column; gap: 16px; }
+
+/* Bolhas de Chat */
+.printia-msg-container { display: flex; gap: 12px; max-width: 90%; animation: fadeIn 0.3s ease-in; }
+.printia-msg-container.user { flex-direction: row-reverse; align-self: flex-end; }
+.printia-msg-container.bot { align-self: flex-start; }
+
+.printia-avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+.user .printia-avatar { background: #e2e8f0; }
+.bot .printia-avatar { background: #e0e7ff; border: 1px solid #c7d2fe; }
+
+.printia-bubble { padding: 14px 18px; border-radius: 20px; font-size: 13px; line-height: 1.5; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+.user .printia-bubble { background: #4f46e5; color: white; border-top-right-radius: 4px; }
+.bot .printia-bubble { background: white; color: #334155; border-top-left-radius: 4px; border: 1px solid #e2e8f0; }
+
+/* Footer / Input */
+#printia-footer { padding: 15px; background-color: white; border-top: 1px solid #e2e8f0; display: flex; gap: 10px; }
+#printia-input { flex: 1; padding: 12px 15px; border-radius: 12px; border: 1px solid #cbd5e1; font-size: 13px; outline: none; resize: none; font-family: inherit;}
+#printia-input:focus { border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
+#printia-send-btn { background-color: #4f46e5; color: white; border: none; border-radius: 12px; padding: 0 16px; cursor: pointer; font-weight: bold; transition: background 0.2s; }
+#printia-send-btn:hover { background-color: #4338ca; }
+#printia-send-btn:disabled { background-color: #94a3b8; cursor: not-allowed; }
+
+/* Loading Animation */
+.printia-loading { display: flex; gap: 4px; padding: 5px; }
+.printia-dot { width: 6px; height: 6px; background: #818cf8; border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
+.printia-dot:nth-child(1) { animation-delay: -0.32s; }
+.printia-dot:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }

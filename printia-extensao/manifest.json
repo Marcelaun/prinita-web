@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "PrintIA Copilot - WhatsApp",
+  "version": "1.0",
+  "description": "Assistente de Vendas Gráficas injetado no WhatsApp Web.",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "css": ["style.css"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
