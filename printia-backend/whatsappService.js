@@ -103,7 +103,7 @@ export async function initWhatsApp(graficaId, callbacks) {
   return sessionData;
 }
 
-export async function enviarMensagem(graficaId, number, text, imageUrl = null) {
+export async function enviarMensagem(graficaId, number, text, files = []) {
   const session = sessions.get(graficaId);
   if (!session || !session.sock || session.status !== 'connected') {
     throw new Error('WhatsApp não está conectado para esta gráfica.');
@@ -113,19 +113,44 @@ export async function enviarMensagem(graficaId, number, text, imageUrl = null) {
     jid = `${jid}@s.whatsapp.net`;
   }
   
-  let result;
-  if (imageUrl) {
-    result = await session.sock.sendMessage(
-      jid, 
-      { image: { url: imageUrl }, caption: text }
-    );
-  } else {
-    result = await session.sock.sendMessage(
-      jid, 
-      { text }
-    );
+  let results = [];
+  
+  // Se houver arquivos, iteramos sobre eles
+  if (files && files.length > 0) {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      // Apenas o primeiro arquivo recebe a legenda (caption)
+      const caption = i === 0 ? text : undefined;
+      
+      const isImage = file.mimetype.startsWith('image/');
+      const isVideo = file.mimetype.startsWith('video/');
+      const isAudio = file.mimetype.startsWith('audio/');
+      
+      let res;
+      if (isImage) {
+        res = await session.sock.sendMessage(jid, { image: { url: file.url }, caption });
+      } else if (isVideo) {
+        res = await session.sock.sendMessage(jid, { video: { url: file.url }, caption });
+      } else if (isAudio) {
+        res = await session.sock.sendMessage(jid, { audio: { url: file.url }, mimetype: file.mimetype });
+      } else {
+        // Documentos genéricos (PDF, zip, docx, rar, etc)
+        res = await session.sock.sendMessage(jid, { 
+          document: { url: file.url }, 
+          mimetype: file.mimetype, 
+          fileName: file.name,
+          caption 
+        });
+      }
+      results.push(res);
+    }
+  } else if (text) {
+    // Se não tiver arquivos, mas tiver texto, envia apenas o texto
+    const res = await session.sock.sendMessage(jid, { text });
+    results.push(res);
   }
-  return result;
+  
+  return results.length === 1 ? results[0] : results;
 }
 
 export function getBaileysOwnerNumber(graficaId) {

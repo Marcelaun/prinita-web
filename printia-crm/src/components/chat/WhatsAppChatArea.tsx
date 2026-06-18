@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, User, Check, CheckCheck, FileText, Download, Tag } from 'lucide-react';
+import { Send, User, Check, CheckCheck, FileText, Download, Tag, Paperclip, X, Loader2 } from 'lucide-react';
 import { getWhatsAppMessages, sendWhatsAppMessage, markChatAsRead, updateChatLabels } from '../../services/api';
 import { supabase } from '../../lib/supabase';
 import { LABEL_COLORS, LABEL_NAMES } from '../sidebar/WhatsAppSidebar';
@@ -35,7 +35,11 @@ const WhatsAppChatArea: React.FC<Props> = ({ activeChat, currentUserName }) => {
   const [isTyping, setIsTyping] = useState(false);
   const [chatLabels, setChatLabels] = useState<string[]>([]);
   const [showLabelMenu, setShowLabelMenu] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [uploadingFiles, setUploadingFiles] = useState<{file: File, text: string}[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -48,6 +52,8 @@ const WhatsAppChatArea: React.FC<Props> = ({ activeChat, currentUserName }) => {
     setInputText('');
     setIsTyping(false);
     setChatLabels([]);
+    setSelectedFiles([]);
+    setIsUploading(false);
     setShowLabelMenu(false);
 
     if (!activeChat?.id) {
@@ -139,42 +145,73 @@ const WhatsAppChatArea: React.FC<Props> = ({ activeChat, currentUserName }) => {
     };
   }, [activeChat?.id]); // Re-executa sempre que o ID mudar
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const filesArray = Array.from(e.target.files);
+      const validFiles = filesArray.filter(f => f.size <= 50 * 1024 * 1024); // Limite de 50MB
+      
+      if (validFiles.length < filesArray.length) {
+        alert('Alguns arquivos foram ignorados pois excedem o limite de 50MB.');
+      }
+      
+      setSelectedFiles(prev => [...prev, ...validFiles]);
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleSend = async () => {
-    if (!inputText.trim() || !activeChat) return;
+    if ((!inputText.trim() && selectedFiles.length === 0) || !activeChat || isUploading) return;
     
-    // Se tiver nome do usuário, adiciona no começo da mensagem
     const text = currentUserName 
       ? `*${currentUserName}:*\n${inputText.trim()}` 
       : inputText.trim();
       
     setInputText(''); 
+    setIsUploading(true);
+    
+    // Mostra como balões "enviando..."
+    const filesToUpload = [...selectedFiles];
+    setUploadingFiles(filesToUpload.map((f, i) => ({ file: f, text: i === 0 ? text : '' })));
+    setSelectedFiles([]);
+    setTimeout(scrollToBottom, 50);
     
     try {
-      const result = await sendWhatsAppMessage(activeChat.remote_jid, text);
-      console.log("Mensagem enviada com sucesso, atualizando UI localmente...");
+      let uploadedFiles: Array<{url: string, mimetype: string, name: string}> = [];
       
-      const newMessage: Message = {
-        id: result.data?.key?.id || `temp_${Date.now()}`,
-        content: text,
-        from_me: true,
-        created_at: new Date().toISOString()
-      };
+      if (filesToUpload.length > 0) {
+        for (const file of filesToUpload) {
+          const fileName = `${activeChat.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+          
+          const { data, error } = await supabase.storage.from('whatsapp_media').upload(fileName, file, {
+            upsert: false
+          });
+          
+          if (error) throw error;
+          
+          const { data: publicUrlData } = supabase.storage.from('whatsapp_media').getPublicUrl(fileName);
+          
+          uploadedFiles.push({
+            url: publicUrlData.publicUrl,
+            mimetype: file.type || 'application/octet-stream',
+            name: file.name
+          });
+        }
+      }
       
-      setMessages(prev => {
-        // Evita duplicidade se o realtime for MUITO rápido
-        if (prev.find(m => m.id === newMessage.id)) return prev;
-        return [...prev, newMessage];
-      });
+      await sendWhatsAppMessage(activeChat.remote_jid, text, uploadedFiles);
       
-      // Scroll forçado
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      }, 100);
+      console.log("Mensagem/Arquivos enviados com sucesso");
+      setTimeout(scrollToBottom, 200);
       
     } catch (error) {
-      console.error("Erro ao enviar mensagem", error);
-      alert("Erro ao enviar mensagem.");
-      setInputText(text); // Devolve o texto se der erro
+      console.error("Erro ao enviar:", error);
+      alert("Erro ao enviar mensagem ou arquivos.");
+    } finally {
+      setIsUploading(false);
+      setUploadingFiles([]);
     }
   };
 
@@ -311,6 +348,8 @@ const WhatsAppChatArea: React.FC<Props> = ({ activeChat, currentUserName }) => {
                         <FileText size={24} className="text-emerald-500 shrink-0" />
                       ) : msg.media_mimetype?.includes('presentation') || msg.media_mimetype?.includes('powerpoint') ? (
                         <FileText size={24} className="text-orange-500 shrink-0" />
+                      ) : msg.media_mimetype?.includes('zip') || msg.media_mimetype?.includes('rar') || msg.media_mimetype?.includes('archive') ? (
+                        <FileText size={24} className="text-purple-500 shrink-0" />
                       ) : (
                         <FileText size={24} className="text-slate-500 shrink-0" />
                       )}
@@ -319,6 +358,7 @@ const WhatsAppChatArea: React.FC<Props> = ({ activeChat, currentUserName }) => {
                           {msg.media_mimetype?.includes('pdf') ? 'Arquivo PDF' : 
                            msg.media_mimetype?.includes('word') ? 'Documento Word' : 
                            msg.media_mimetype?.includes('spreadsheet') || msg.media_mimetype?.includes('excel') ? 'Planilha' : 
+                           msg.media_mimetype?.includes('zip') || msg.media_mimetype?.includes('rar') ? 'Arquivo Compactado' :
                            'Documento'}
                         </span>
                         <span className="text-[10px] text-slate-500 uppercase">{msg.media_mimetype?.split('/')[1]?.split('.')[0] || 'ARQUIVO'}</span>
@@ -358,28 +398,116 @@ const WhatsAppChatArea: React.FC<Props> = ({ activeChat, currentUserName }) => {
             );
           })
         )}
+        
+        {/* Balões Otimistas (Enviando) */}
+        {isUploading && uploadingFiles.length > 0 && uploadingFiles.map((upFile, idx) => (
+          <div key={`uploading_${idx}`} className="flex justify-end opacity-60">
+            <div className="max-w-[85%] relative px-3 py-2 shadow-sm bg-[#d9fdd3] text-slate-800 rounded-xl border-2 border-dashed border-emerald-300">
+              {upFile.file.type.startsWith('image/') ? (
+                <div className="relative">
+                  <img src={URL.createObjectURL(upFile.file)} alt="Preview" className="w-full max-w-[300px] rounded-lg object-cover border border-black/5" />
+                  <div className="absolute inset-0 bg-white/50 flex flex-col items-center justify-center rounded-lg">
+                    <Loader2 size={30} className="animate-spin text-emerald-600 mb-2" />
+                    <span className="text-xs font-bold text-emerald-800">Enviando {upFile.file.size > 5000000 ? 'arquivo grande...' : '...'}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 bg-white/50 p-3 rounded-lg border border-black/5">
+                  <Loader2 size={24} className="animate-spin text-emerald-500 shrink-0" />
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-sm font-bold text-slate-700 truncate">{upFile.file.name}</span>
+                    <span className="text-xs text-slate-500 uppercase">Enviando documento...</span>
+                  </div>
+                </div>
+              )}
+              {upFile.text && (
+                <div className="text-[13.5px] leading-relaxed whitespace-pre-wrap mt-2">{upFile.text}</div>
+              )}
+              <span className="text-[10px] text-slate-500 float-right ml-3 mt-1 flex items-center gap-1">
+                agora <Loader2 size={10} className="animate-spin" />
+              </span>
+            </div>
+          </div>
+        ))}
+        {isUploading && uploadingFiles.length === 0 && (
+          <div className="flex justify-end opacity-60">
+            <div className="max-w-[85%] relative px-3 py-2 shadow-sm bg-[#d9fdd3] text-slate-800 rounded-xl">
+              <div className="flex items-center gap-2 text-[13.5px]">
+                <Loader2 size={14} className="animate-spin text-emerald-600" /> Enviando...
+              </div>
+            </div>
+          </div>
+        )}
+        
         <div ref={messagesEndRef} />
       </div>
       
-      {/* Input Area */}
-      <div className="p-3 bg-[#f0f2f5] flex gap-2 items-center z-10">
-        <input 
-          type="text" 
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-          placeholder="Digite uma mensagem..." 
-          className="flex-1 rounded-xl border-none px-4 py-3 focus:ring-0 shadow-sm outline-none text-sm text-slate-700 bg-white"
-        />
-        <button 
-          onClick={handleSend}
-          disabled={!inputText.trim()}
-          className={`w-12 h-12 flex items-center justify-center rounded-full transition-all shadow-sm ${
-            inputText.trim() ? 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer' : 'bg-slate-300 text-slate-500 cursor-not-allowed'
-          }`}
-        >
-          <Send size={20} className={`${inputText.trim() ? 'ml-1' : ''}`} />
-        </button>
+      <div className="p-3 bg-[#f0f2f5] flex flex-col z-10">
+        
+        {/* Preview de Arquivos Selecionados */}
+        {selectedFiles.length > 0 && (
+          <div className="flex gap-2 p-2 overflow-x-auto mb-2 items-center bg-white rounded-xl shadow-sm border border-slate-200">
+            {selectedFiles.map((file, idx) => (
+              <div key={idx} className="relative flex-shrink-0 w-16 h-16 rounded-lg bg-slate-100 flex flex-col items-center justify-center border border-slate-200 overflow-hidden group">
+                {file.type.startsWith('image/') ? (
+                  <img src={URL.createObjectURL(file)} className="w-full h-full object-cover" alt="Preview" />
+                ) : (
+                  <>
+                    <FileText size={20} className="text-slate-400 mb-1" />
+                    <span className="text-[8px] max-w-[50px] truncate font-bold text-slate-500">{file.name}</span>
+                  </>
+                )}
+                <button 
+                  onClick={() => removeFile(idx)}
+                  className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+            {isUploading && (
+              <div className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold ml-auto">
+                <Loader2 size={14} className="animate-spin" /> Enviando arquivos...
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex gap-2 items-center">
+          <input 
+            type="file" 
+            multiple 
+            hidden 
+            ref={fileInputRef} 
+            onChange={handleFileSelect} 
+            accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar" 
+          />
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+            className="w-12 h-12 flex items-center justify-center text-slate-500 hover:text-indigo-600 bg-white hover:bg-indigo-50 rounded-full transition-colors shadow-sm disabled:opacity-50"
+          >
+            <Paperclip size={20} />
+          </button>
+          <input 
+            type="text" 
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+            placeholder="Digite uma mensagem..." 
+            disabled={isUploading}
+            className="flex-1 rounded-xl border-none px-4 py-3 focus:ring-0 shadow-sm outline-none text-sm text-slate-700 bg-white disabled:bg-slate-100"
+          />
+          <button 
+            onClick={handleSend}
+            disabled={(!inputText.trim() && selectedFiles.length === 0) || isUploading}
+            className={`w-12 h-12 flex items-center justify-center rounded-full transition-all shadow-sm ${
+              inputText.trim() || selectedFiles.length > 0 ? 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer' : 'bg-slate-300 text-slate-500 cursor-not-allowed'
+            }`}
+          >
+            {isUploading ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} className={`${inputText.trim() || selectedFiles.length > 0 ? 'ml-1' : ''}`} />}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -655,13 +655,13 @@ app.post('/api/whatsapp/chats/:id/read', async (req, res) => {
 // Enviar mensagem
 app.post('/api/whatsapp/send', async (req, res) => {
   try {
-    const { number, text, imageUrl } = req.body;
+    const { number, text, files } = req.body;
     const graficaId = req.grafica_id;
-    if (!number || (!text && !imageUrl)) {
-      return res.status(400).json({ error: 'Número e texto (ou imagem) são obrigatórios.' });
+    if (!number || (!text && (!files || files.length === 0))) {
+      return res.status(400).json({ error: 'Número e texto (ou arquivos) são obrigatórios.' });
     }
 
-    const data = await enviarMensagem(graficaId, number, text, imageUrl);
+    const data = await enviarMensagem(graficaId, number, text, files);
 
     // Salva no banco
     const remoteJid = number.includes('@s.whatsapp.net') ? number : `${number}@s.whatsapp.net`;
@@ -686,13 +686,36 @@ app.post('/api/whatsapp/send', async (req, res) => {
     }
 
     if (chat) {
-      await supabase.from('whatsapp_messages').insert([{
-        chat_id: chat.id,
-        content: text,
-        from_me: true,
-        message_id: data?.key?.id || `msg_${Date.now()}`,
-        grafica_id: graficaId
-      }]);
+      // data pode ser um objeto (se enviou só texto) ou um array (se enviou arquivos)
+      const results = Array.isArray(data) ? data : [data];
+      
+      const insertPromises = results.map((res, index) => {
+        let fileInfo = null;
+        if (files && files[index]) {
+          fileInfo = files[index];
+        }
+        
+        let mediaType = null;
+        if (fileInfo) {
+          if (fileInfo.mimetype.startsWith('image/')) mediaType = 'imageMessage';
+          else if (fileInfo.mimetype.startsWith('video/')) mediaType = 'videoMessage';
+          else if (fileInfo.mimetype.startsWith('audio/')) mediaType = 'audioMessage';
+          else mediaType = 'documentMessage';
+        }
+        
+        return supabase.from('whatsapp_messages').insert([{
+          chat_id: chat.id,
+          content: (index === 0 && text) ? text : '',
+          from_me: true,
+          message_id: res?.key?.id || `msg_${Date.now()}_${index}`,
+          grafica_id: graficaId,
+          media_url: fileInfo ? fileInfo.url : null,
+          media_type: mediaType,
+          media_mimetype: fileInfo ? fileInfo.mimetype : null
+        }]);
+      });
+      
+      await Promise.all(insertPromises);
     }
 
     res.json({ success: true, message: 'Mensagem enviada com sucesso!' });
@@ -713,10 +736,26 @@ const startBaileysSession = async (graficaId) => {
           if (!resolvedJid || resolvedJid.includes('@g.us') || resolvedJid === 'status@broadcast') continue;
 
           const pushName = msg.pushName || 'Desconhecido';
-          let textMessage = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
+          
+          // Unwrap message
+          let messageContent = msg.message;
+          if (messageContent?.ephemeralMessage) messageContent = messageContent.ephemeralMessage.message;
+          if (messageContent?.viewOnceMessage) messageContent = messageContent.viewOnceMessage.message;
+          if (messageContent?.viewOnceMessageV2) messageContent = messageContent.viewOnceMessageV2.message;
+          if (messageContent?.documentWithCaptionMessage) messageContent = messageContent.documentWithCaptionMessage.message;
+          
+          // Substitui no msg original para o downloadMediaMessage funcionar corretamente
+          msg.message = messageContent;
+          
+          const msgType = Object.keys(messageContent)[0];
+          
+          let textMessage = messageContent?.conversation || 
+                            messageContent?.extendedTextMessage?.text ||
+                            messageContent?.imageMessage?.caption ||
+                            messageContent?.videoMessage?.caption ||
+                            messageContent?.documentMessage?.caption;
 
           if (!textMessage) {
-            const msgType = Object.keys(msg.message)[0];
             if (msgType === 'imageMessage') textMessage = "📷 Imagem recebida";
             else if (msgType === 'videoMessage') textMessage = "🎥 Vídeo recebido";
             else if (msgType === 'audioMessage') textMessage = "🎵 Áudio recebido";

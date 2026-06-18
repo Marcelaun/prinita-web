@@ -36,3 +36,6 @@ Thumbs.db
 # Temporários
 .tmp/
 temp/
+
+modelo_adicao_openclaude
+printia-backend/sessions/

@@ -46,11 +46,11 @@ export const markChatAsRead = async (chatId: string) => {
   return res.json();
 };
 
-export const sendWhatsAppMessage = async (number: string, text: string, imageUrl?: string) => {
+export const sendWhatsAppMessage = async (number: string, text: string, files?: Array<{url: string, mimetype: string, name: string}>) => {
   const res = await fetch(`${API_URL}/whatsapp/send`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ number, text, imageUrl }) 
+    body: JSON.stringify({ number, text, files }) 
   });
   
   if (!res.ok) throw new Error('Erro ao enviar mensagem');
